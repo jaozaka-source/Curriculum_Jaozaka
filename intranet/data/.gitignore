@@ -1,0 +1,4 @@
+# La base de données vit uniquement sur le serveur, jamais dans Git
+*
+!.gitignore
+!.htaccess

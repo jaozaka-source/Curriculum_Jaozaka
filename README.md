@@ -47,6 +47,27 @@ Pour une bonne délivrabilité (éviter les spams) :
 Les messages arrivent sur `jaozaka@gmail.com` ; « Répondre » répond directement au visiteur.
 Protection anti-spam : champ piège invisible + 1 envoi par minute et par visiteur.
 
+## Intranet chef de projet (`/intranet/`)
+
+Interface privée de suivi de projets : **Récapitulatif**, **Programmes**, **Projets**.
+Un chef de projet gère plusieurs programmes et plusieurs projets ; un programme regroupe plusieurs projets.
+
+```
+intranet/index.php        Redirige vers la connexion ou le récapitulatif
+intranet/setup.php        Création du premier compte (désactivée dès qu'un compte existe)
+intranet/login.php        Connexion / logout.php : déconnexion
+intranet/recap.php        Indicateurs, échéances, projets par statut, programmes actifs
+intranet/programmes.php   Liste + création / modification / suppression des programmes
+intranet/projets.php      Liste filtrable + création / modification / suppression des projets
+intranet/inc/             Code commun (base, sécurité, gabarit) — non accessible depuis le web
+intranet/data/            Base SQLite créée automatiquement — non accessible, jamais dans Git
+intranet/assets/          Styles de l'intranet
+```
+
+- PHP 8 + SQLite (inclus chez Hostinger) : rien à configurer, la base `data/intranet.sqlite` se crée au premier accès.
+- ⚠️ **Juste après la mise en ligne**, ouvrir `https://jaozaka.com/intranet/` et créer le compte : tant qu'aucun compte n'existe, la page de création est ouverte à tous.
+- Sauvegarde : télécharger `public_html/intranet/data/intranet.sqlite` via le Gestionnaire de fichiers de hPanel.
+
 ## Modifier le contenu
 
 - Textes : directement dans les fichiers `.html`.
