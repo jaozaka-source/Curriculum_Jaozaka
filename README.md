@@ -50,5 +50,6 @@ Protection anti-spam : champ piège invisible + 1 envoi par minute et par visite
 ## Modifier le contenu
 
 - Textes : directement dans les fichiers `.html`.
+- Logos JRConsulting et monentrepriselocale.fr : remplacer `assets/img/clients/jrconsulting.png` et `assets/img/clients/monentrepriselocale.png` (mêmes noms).
 - CV : remplacer `assets/cv/CV_Jaozaka_Razafimahazo.pdf` (garder le même nom).
 - Si le domaine n'est pas `jaozaka.com` : adapter `sitemap.xml`, `robots.txt`, les balises `canonical` / `og:` des pages et `FROM_EMAIL`.

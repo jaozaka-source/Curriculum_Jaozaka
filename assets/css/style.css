@@ -26,6 +26,8 @@
   --gp: #c9520f;      --gp-bg: #fdeadc;
   --infra: #22609f;   --infra-bg: #e0ebf7;
   --cyber: #0c7465;   --cyber-bg: #dbf1ec;
+  --support: #5a45b0; --support-bg: #ebe8f8;
+  --app: #a12d68;     --app-bg: #f8e3ee;
 
   --font: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
   --wide: 115%;
@@ -252,6 +254,18 @@ p { margin: 0 0 1em; }
   .rack-unit .chips { grid-column: 2 / -1; }
 }
 
+/* Indépendant & entrepreneur */
+.ventures { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.venture { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; padding: 26px; border: 1px solid var(--rule); border-radius: 14px; background: var(--paper); }
+.venture-logo { height: 120px; display: grid; place-items: center; background: var(--white); border: 1px solid var(--rule); border-radius: 10px; padding: 12px; }
+.venture-logo img { max-height: 92px; width: auto; object-fit: contain; }
+.venture-when { margin: 0 0 4px; color: var(--signal-dark); font-weight: 700; font-size: .88rem; }
+.venture h3 { margin-bottom: 10px; }
+.venture p:last-of-type { color: var(--steel); }
+.venture-link { font-weight: 650; text-underline-offset: 3px; }
+@media (max-width: 1000px) { .ventures { grid-template-columns: 1fr; } }
+
+
 /* Communication */
 .talk { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
 .talk-statement { font-size: clamp(1.5rem, 2.8vw, 2.15rem); font-weight: 700; font-stretch: 108%; line-height: 1.25; margin: 0 0 24px; }
@@ -349,6 +363,8 @@ p { margin: 0 0 1em; }
 .tag-gp { background: var(--gp-bg); color: var(--gp); }
 .tag-infra { background: var(--infra-bg); color: var(--infra); }
 .tag-cyber { background: var(--cyber-bg); color: var(--cyber); }
+.tag-support { background: var(--support-bg); color: var(--support); }
+.tag-app { background: var(--app-bg); color: var(--app); }
 
 /* ---------- Expériences ---------- */
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 22px; }
@@ -361,10 +377,12 @@ p { margin: 0 0 1em; }
 .filter .n { font-size: .78rem; color: var(--steel); font-weight: 700; }
 .filter[aria-pressed="true"] { background: var(--ink); color: var(--white); border-color: var(--ink); }
 .filter[aria-pressed="true"] .n { color: var(--on-ink-soft); }
-.filter[data-f="gp"]::before, .filter[data-f="infra"]::before, .filter[data-f="cyber"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.filter:not([data-f="all"])::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
 .filter[data-f="gp"]::before { background: var(--gp); }
 .filter[data-f="infra"]::before { background: var(--infra); }
 .filter[data-f="cyber"]::before { background: var(--cyber); }
+.filter[data-f="support"]::before { background: var(--support); }
+.filter[data-f="app"]::before { background: var(--app); }
 .linkbtn { font: inherit; font-size: .9rem; font-weight: 600; background: none; border: 0; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 6px 2px; }
 
 .timeline { list-style: none; margin: 0; padding: 0; position: relative; }
@@ -382,6 +400,7 @@ p { margin: 0 0 1em; }
 .xp-logo img { max-height: 46px; width: auto; object-fit: contain; }
 .xp-role { display: block; font-size: 1.12rem; font-weight: 700; font-stretch: var(--wide); line-height: 1.25; }
 .xp-company { font-weight: 600; color: var(--steel); margin: 2px 0 8px; font-size: .95rem; }
+.xp-company .via { font-weight: 500; font-size: .85rem; padding: 1px 8px; margin-left: 6px; border-radius: 4px; background: var(--paper); border: 1px solid var(--rule); white-space: nowrap; }
 .xp-summary { margin: 0 0 10px; font-size: .96rem; line-height: 1.5; }
 .xp-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .xp-arrow { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--rule); display: grid; place-items: center; transition: transform .25s ease, background-color .2s; justify-self: end; }
