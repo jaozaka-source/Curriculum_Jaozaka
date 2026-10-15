@@ -8,6 +8,54 @@
 declare(strict_types=1);
 
 const DB_PATH = __DIR__ . '/../data/intranet.sqlite';
+const ERROR_LOG = __DIR__ . '/../data/error.log';
+
+/** Page d'erreur lisible (au lieu d'une erreur 500 muette). */
+function fatal_page(string $title, array $lines): void {
+    if (!headers_sent()) {
+        http_response_code(503);
+        header('Content-Type: text/html; charset=utf-8');
+    }
+    echo '<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="robots" content="noindex">'
+       . '<title>Intranet indisponible</title><body style="font-family:system-ui,sans-serif;max-width:640px;margin:60px auto;padding:0 16px;color:#0f2438">'
+       . '<h1 style="font-size:1.4rem">' . htmlspecialchars($title) . '</h1><ul>';
+    foreach ($lines as $l) { echo '<li>' . htmlspecialchars($l) . '</li>'; }
+    echo '</ul></body></html>';
+    exit;
+}
+
+// Prérequis de l'hébergement : vérifiés avant tout, avec un message explicite.
+(function (): void {
+    $problems = [];
+    if (PHP_VERSION_ID < 80000) {
+        $problems[] = 'PHP ' . PHP_VERSION . ' détecté : PHP 8.0 minimum est requis (hPanel › Avancé › Configuration PHP).';
+    }
+    foreach (['pdo_sqlite' => 'PDO SQLite', 'mbstring' => 'mbstring'] as $ext => $label) {
+        if (!extension_loaded($ext)) {
+            $problems[] = "Extension PHP « $label » manquante (hPanel › Avancé › Configuration PHP › Extensions PHP).";
+        }
+    }
+    $dataDir = dirname(DB_PATH);
+    if (!is_dir($dataDir)) {
+        $problems[] = 'Le dossier intranet/data est absent sur le serveur.';
+    } elseif (!is_writable($dataDir)) {
+        $problems[] = 'Le dossier intranet/data n\'est pas accessible en écriture (droits 755 requis, via le Gestionnaire de fichiers).';
+    }
+    if ($problems) {
+        fatal_page("L'intranet ne peut pas démarrer", $problems);
+    }
+})();
+
+// Toute erreur imprévue est notée dans data/error.log (non accessible depuis le web).
+set_exception_handler(function (Throwable $ex): void {
+    $ref = substr(bin2hex(random_bytes(4)), 0, 8);
+    @file_put_contents(ERROR_LOG, sprintf("[%s] ref=%s %s: %s in %s:%d\n%s\n\n", date('c'), $ref, get_class($ex),
+        $ex->getMessage(), $ex->getFile(), $ex->getLine(), $ex->getTraceAsString()), FILE_APPEND | LOCK_EX);
+    fatal_page('Une erreur est survenue', [
+        "Référence : $ref",
+        'Le détail est enregistré dans intranet/data/error.log (Gestionnaire de fichiers de hPanel).',
+    ]);
+});
 
 const STATUTS = ['À cadrer', 'En cours', 'En pause', 'Terminé', 'Annulé'];
 
@@ -62,6 +110,19 @@ function db(): PDO {
 function migrate(PDO $pdo): void {
     $migrations = [
         1 => function (PDO $pdo): void {
+            // Base créée par la toute première version (comptes, programmes, projets sans version de schéma) :
+            // ses tables sont mises de côté puis recopiées dans le nouveau schéma.
+            $legacy = (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'")->fetchColumn();
+            if ($legacy) {
+                $pdo->exec('
+                    DROP INDEX IF EXISTS idx_programmes_owner;
+                    DROP INDEX IF EXISTS idx_projets_owner;
+                    DROP INDEX IF EXISTS idx_projets_programme;
+                    ALTER TABLE projets RENAME TO old_projets;
+                    ALTER TABLE programmes RENAME TO old_programmes;
+                    ALTER TABLE users RENAME TO old_users;
+                ');
+            }
             $pdo->exec("
                 CREATE TABLE users (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,6 +260,25 @@ function migrate(PDO $pdo): void {
                 CREATE INDEX idx_aff_user ON affectations(user_id);
             ");
             seed($pdo);
+
+            if ($legacy) {
+                // L'ancien « nom complet » est découpé en prénom (premier mot) + nom ; les anciens comptes deviennent administrateurs.
+                $pdo->exec("
+                    INSERT INTO users (id, prenom, nom, email, role, acces, password_hash, created_at)
+                    SELECT id,
+                           CASE WHEN instr(trim(nom), ' ') > 0 THEN substr(trim(nom), 1, instr(trim(nom), ' ') - 1) ELSE trim(nom) END,
+                           CASE WHEN instr(trim(nom), ' ') > 0 THEN trim(substr(trim(nom), instr(trim(nom), ' ') + 1)) ELSE '' END,
+                           email, 'admin', 1, password_hash, created_at
+                    FROM old_users;
+                    INSERT INTO programmes (id, chef_projet_id, nom, description, statut, date_debut, date_fin, created_at, updated_at)
+                    SELECT id, owner_id, nom, description, statut, date_debut, date_fin, created_at, updated_at FROM old_programmes;
+                    INSERT INTO projets (id, chef_projet_id, programme_id, nom, description, statut, avancement, date_debut, date_fin, created_at, updated_at)
+                    SELECT id, owner_id, programme_id, nom, description, statut, avancement, date_debut, date_fin, created_at, updated_at FROM old_projets;
+                    DROP TABLE old_projets;
+                    DROP TABLE old_programmes;
+                    DROP TABLE old_users;
+                ");
+            }
         },
     ];
 
@@ -377,7 +457,7 @@ function e(?string $s): string {
     return htmlspecialchars((string)$s, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function redirect(string $url): never {
+function redirect(string $url): void {
     header('Location: ' . $url);
     exit;
 }
