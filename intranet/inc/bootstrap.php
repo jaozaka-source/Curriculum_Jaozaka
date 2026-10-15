@@ -110,6 +110,19 @@ function db(): PDO {
 function migrate(PDO $pdo): void {
     $migrations = [
         1 => function (PDO $pdo): void {
+            // Base créée par la toute première version (comptes, programmes, projets sans version de schéma) :
+            // ses tables sont mises de côté puis recopiées dans le nouveau schéma.
+            $legacy = (bool)$pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'")->fetchColumn();
+            if ($legacy) {
+                $pdo->exec('
+                    DROP INDEX IF EXISTS idx_programmes_owner;
+                    DROP INDEX IF EXISTS idx_projets_owner;
+                    DROP INDEX IF EXISTS idx_projets_programme;
+                    ALTER TABLE projets RENAME TO old_projets;
+                    ALTER TABLE programmes RENAME TO old_programmes;
+                    ALTER TABLE users RENAME TO old_users;
+                ');
+            }
             $pdo->exec("
                 CREATE TABLE users (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,6 +260,25 @@ function migrate(PDO $pdo): void {
                 CREATE INDEX idx_aff_user ON affectations(user_id);
             ");
             seed($pdo);
+
+            if ($legacy) {
+                // L'ancien « nom complet » est découpé en prénom (premier mot) + nom ; les anciens comptes deviennent administrateurs.
+                $pdo->exec("
+                    INSERT INTO users (id, prenom, nom, email, role, acces, password_hash, created_at)
+                    SELECT id,
+                           CASE WHEN instr(trim(nom), ' ') > 0 THEN substr(trim(nom), 1, instr(trim(nom), ' ') - 1) ELSE trim(nom) END,
+                           CASE WHEN instr(trim(nom), ' ') > 0 THEN trim(substr(trim(nom), instr(trim(nom), ' ') + 1)) ELSE '' END,
+                           email, 'admin', 1, password_hash, created_at
+                    FROM old_users;
+                    INSERT INTO programmes (id, chef_projet_id, nom, description, statut, date_debut, date_fin, created_at, updated_at)
+                    SELECT id, owner_id, nom, description, statut, date_debut, date_fin, created_at, updated_at FROM old_programmes;
+                    INSERT INTO projets (id, chef_projet_id, programme_id, nom, description, statut, avancement, date_debut, date_fin, created_at, updated_at)
+                    SELECT id, owner_id, programme_id, nom, description, statut, avancement, date_debut, date_fin, created_at, updated_at FROM old_projets;
+                    DROP TABLE old_projets;
+                    DROP TABLE old_programmes;
+                    DROP TABLE old_users;
+                ");
+            }
         },
     ];
 
