@@ -24,11 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = post_str('email', 160);
     $password = (string)($_POST['password'] ?? '');
 
-    $st = db()->prepare('SELECT id, password_hash FROM users WHERE email = ?');
+    $st = db()->prepare('SELECT id, password_hash FROM users WHERE email = ? AND acces = 1 AND actif = 1');
     $st->execute([$email]);
     $row = $st->fetch();
 
-    if ($row && password_verify($password, $row['password_hash'])) {
+    if ($row && $row['password_hash'] && password_verify($password, $row['password_hash'])) {
         unset($_SESSION['login_fails']);
         if (password_needs_rehash($row['password_hash'], PASSWORD_DEFAULT)) {
             db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')

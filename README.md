@@ -49,22 +49,34 @@ Protection anti-spam : champ piège invisible + 1 envoi par minute et par visite
 
 ## Intranet chef de projet (`/intranet/`)
 
-Interface privée de suivi de projets : **Récapitulatif**, **Programmes**, **Projets**.
+Interface privée de suivi de projets : **Récapitulatif**, **Programmes**, **Projets**, **Ressources** et **Administration**.
 Un chef de projet gère plusieurs programmes et plusieurs projets ; un programme regroupe plusieurs projets.
+Le chef de projet affecte à ses projets des personnes, des services « à nommer » et des matériels / services ;
+le coût estimé est calculé à partir des TJM (propre à la personne, sinon TJM par défaut interne / externe).
 
 ```
-intranet/index.php        Redirige vers la connexion ou le récapitulatif
-intranet/setup.php        Création du premier compte (désactivée dès qu'un compte existe)
-intranet/login.php        Connexion / logout.php : déconnexion
-intranet/recap.php        Indicateurs, échéances, projets par statut, programmes actifs
-intranet/programmes.php   Liste + création / modification / suppression des programmes
-intranet/projets.php      Liste filtrable + création / modification / suppression des projets
-intranet/inc/             Code commun (base, sécurité, gabarit) — non accessible depuis le web
-intranet/data/            Base SQLite créée automatiquement — non accessible, jamais dans Git
-intranet/assets/          Styles de l'intranet
+intranet/index.php                Redirige vers la connexion ou le récapitulatif
+intranet/setup.php                Création du premier compte administrateur (fermée dès qu'un compte existe)
+intranet/login.php / logout.php   Connexion / déconnexion
+intranet/recap.php                Indicateurs, échéances, ressources à nommer, projets par statut, programmes actifs
+intranet/programmes.php           Programmes (chef de projet désigné)
+intranet/projets.php              Liste filtrable des projets + création / modification
+intranet/projet.php               Détail d'un projet + affectation des ressources (charge en J/H, 3 décimales)
+intranet/ressources-humaines.php  Annuaire (internes / externes, rattachements, TJM)
+intranet/personne.php             Fiche personne : rattachements, responsabilités, affectations
+intranet/materiels.php            Matériels & services (coût unique, mensuel ou annuel)
+intranet/organigramme.php         Arbre des départements et services, responsables et membres
+intranet/admin-*.php              Utilisateurs, organisation, profils projet, catégories, TJM par défaut
+intranet/inc/                     Code commun (base, droits, règles métier, gabarit) — non accessible depuis le web
+intranet/data/                    Base SQLite créée automatiquement — non accessible, jamais dans Git
+intranet/assets/                  Styles de l'intranet
 ```
 
-- PHP 8 + SQLite (inclus chez Hostinger) : rien à configurer, la base `data/intranet.sqlite` se crée au premier accès.
+Rôles : Administrateur (tout), Direction / PMO (lecture de tout), Chef de projet (ses programmes et projets),
+Contributeur et Lecteur (projets auxquels ils sont affectés).
+
+- PHP 8.1 ou plus + SQLite (inclus chez Hostinger) : rien à configurer, la base `data/intranet.sqlite` se crée au premier accès.
+- Le schéma est versionné (`migrate()` dans `inc/bootstrap.php`) : les évolutions futures s'appliquent automatiquement sans perdre les données.
 - ⚠️ **Juste après la mise en ligne**, ouvrir `https://jaozaka.com/intranet/` et créer le compte : tant qu'aucun compte n'existe, la page de création est ouverte à tous.
 - Sauvegarde : télécharger `public_html/intranet/data/intranet.sqlite` via le Gestionnaire de fichiers de hPanel.
 
