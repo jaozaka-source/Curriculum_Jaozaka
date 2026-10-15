@@ -1,66 +1,85 @@
 <?php
 /**
  * Projets : liste (filtrable par programme et statut), création, modification, suppression.
- * Un projet appartient au chef de projet connecté et, au plus, à un programme.
+ * Le détail d'un projet et ses affectations de ressources sont dans projet.php.
  */
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 
 $user = require_login();
-$uid  = (int)$user['id'];
 
-function find_projet(int $id, int $uid): ?array {
-    $st = db()->prepare('SELECT * FROM projets WHERE id = ? AND owner_id = ?');
-    $st->execute([$id, $uid]);
+function find_projet(int $id): ?array {
+    $st = db()->prepare('SELECT * FROM projets WHERE id = ?');
+    $st->execute([$id]);
     return $st->fetch() ?: null;
 }
 
-/** Programmes du chef de projet, indexés par id. */
-$st = db()->prepare('SELECT id, nom FROM programmes WHERE owner_id = ? ORDER BY nom');
-$st->execute([$uid]);
-$programmes = array_column($st->fetchAll(), 'nom', 'id');
+/** Programmes auxquels l'utilisateur peut rattacher un projet : [id => nom]. */
+function programmes_rattachables(array $user, ?int $keep): array {
+    $sql = 'SELECT id, nom FROM programmes WHERE ' . (is_admin($user) ? '1 = 1' : '(chef_projet_id = ? OR id = ?)') . ' ORDER BY nom';
+    $st = db()->prepare($sql);
+    $st->execute(is_admin($user) ? [] : [$user['id'], $keep ?? 0]);
+    return array_column($st->fetchAll(), 'nom', 'id');
+}
 
 // ---------- Actions ----------
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
-    $id = (int)($_POST['id'] ?? 0);
+    $id = post_int('id');
+    $existing = $id ? find_projet($id) : null;
 
-    if (($_POST['action'] ?? '') === 'delete') {
-        if (find_projet($id, $uid)) {
-            db()->prepare('DELETE FROM projets WHERE id = ? AND owner_id = ?')->execute([$id, $uid]);
-            flash('Projet supprimé.');
-        }
+    if ($id && (!$existing || !can_edit_projet($user, $existing))) {
+        flash('Vous ne pouvez pas modifier ce projet.');
+        redirect('projets.php');
+    }
+    if (!$id && !can_create($user)) {
+        flash('Votre rôle ne permet pas de créer de projet.');
         redirect('projets.php');
     }
 
-    $programmeId = (int)($_POST['programme_id'] ?? 0);
+    if (($_POST['action'] ?? '') === 'delete') {
+        db()->prepare('DELETE FROM projets WHERE id = ?')->execute([$id]);
+        flash('Projet supprimé.');
+        redirect('projets.php');
+    }
+
+    $programmes  = programmes_rattachables($user, $existing ? (int)$existing['programme_id'] : null);
+    $programmeId = post_int('programme_id');
+    $chefs       = chefs_list();
+    $chefId      = post_id('chef_projet_id');
+    if (!$chefId || !isset($chefs[$chefId])) {
+        $chefId = $existing ? ($existing['chef_projet_id'] !== null ? (int)$existing['chef_projet_id'] : null) : (int)$user['id'];
+    }
+
     $data = [
-        'nom'          => post_str('nom', 160),
-        'description'  => post_str('description', 5000),
-        'statut'       => post_statut(),
-        'avancement'   => max(0, min(100, (int)($_POST['avancement'] ?? 0))),
-        'date_debut'   => post_date('date_debut'),
-        'date_fin'     => post_date('date_fin'),
-        'programme_id' => isset($programmes[$programmeId]) ? $programmeId : null,
+        post_str('nom', 160),
+        post_str('description', 5000),
+        post_statut(),
+        max(0, min(100, post_int('avancement'))),
+        post_date('date_debut'),
+        post_date('date_fin'),
+        isset($programmes[$programmeId]) ? $programmeId : null,
+        $chefId,
     ];
-    if ($data['nom'] === '') {
+    if ($data[0] === '') {
         flash('Le nom du projet est obligatoire.');
         redirect('projets.php?action=' . ($id ? 'edit&id=' . $id : 'new'));
     }
 
-    if ($id && find_projet($id, $uid)) {
+    if ($existing) {
         db()->prepare("UPDATE projets SET nom = ?, description = ?, statut = ?, avancement = ?, date_debut = ?,
-                       date_fin = ?, programme_id = ?, updated_at = datetime('now') WHERE id = ? AND owner_id = ?")
-            ->execute([...array_values($data), $id, $uid]);
+                       date_fin = ?, programme_id = ?, chef_projet_id = ?, updated_at = datetime('now') WHERE id = ?")
+            ->execute([...$data, $id]);
         flash('Projet mis à jour.');
     } else {
-        db()->prepare('INSERT INTO projets (nom, description, statut, avancement, date_debut, date_fin, programme_id, owner_id)
+        db()->prepare('INSERT INTO projets (nom, description, statut, avancement, date_debut, date_fin, programme_id, chef_projet_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-            ->execute([...array_values($data), $uid]);
-        flash('Projet créé.');
+            ->execute($data);
+        $id = (int)db()->lastInsertId();
+        flash('Projet créé. Vous pouvez maintenant lui affecter des ressources.');
     }
-    redirect('projets.php');
+    redirect('projet.php?id=' . $id);
 }
 
 // ---------- Formulaire ----------
@@ -70,27 +89,38 @@ if ($action === 'new' || $action === 'edit') {
     $p = [
         'id' => 0, 'nom' => '', 'description' => '', 'statut' => STATUTS[0], 'avancement' => 0,
         'date_debut' => null, 'date_fin' => null, 'programme_id' => (int)($_GET['programme'] ?? 0),
+        'chef_projet_id' => $user['id'],
     ];
     if ($action === 'edit') {
-        $p = find_projet((int)($_GET['id'] ?? 0), $uid) ?? redirect('projets.php');
+        $p = find_projet((int)($_GET['id'] ?? 0)) ?? redirect('projets.php');
+        if (!can_edit_projet($user, $p)) { redirect('projets.php'); }
+    } elseif (!can_create($user)) {
+        redirect('projets.php');
     }
+    $programmes = programmes_rattachables($user, $p['programme_id'] !== null ? (int)$p['programme_id'] : null);
+    $back = $p['id'] ? 'projet.php?id=' . (int)$p['id'] : 'projets.php';
     page_header($p['id'] ? 'Modifier le projet' : 'Nouveau projet', 'projets', $user);
     ?>
-      <p><a class="back" href="projets.php">← Tous les projets</a></p>
+      <p><a class="back" href="<?= $back ?>">← Retour</a></p>
       <form method="post" class="form card">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
         <label>Nom du projet
           <input name="nom" required maxlength="160" value="<?= e($p['nom']) ?>">
         </label>
-        <label>Programme
-          <select name="programme_id">
-            <option value="0">— Aucun programme —</option>
-            <?php foreach ($programmes as $pid => $pnom): ?>
-              <option value="<?= (int)$pid ?>"<?= (int)$p['programme_id'] === (int)$pid ? ' selected' : '' ?>><?= e($pnom) ?></option>
-            <?php endforeach; ?>
-          </select>
-        </label>
+        <div class="row">
+          <label>Programme
+            <select name="programme_id">
+              <option value="0">— Aucun programme —</option>
+              <?php foreach ($programmes as $pid => $pnom): ?>
+                <option value="<?= (int)$pid ?>"<?= (int)$p['programme_id'] === (int)$pid ? ' selected' : '' ?>><?= e($pnom) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </label>
+          <label>Chef de projet
+            <select name="chef_projet_id"><?= user_options(chefs_list(), $p['chef_projet_id'] !== null ? (int)$p['chef_projet_id'] : null, '— Non désigné —') ?></select>
+          </label>
+        </div>
         <label>Description
           <textarea name="description" rows="4" maxlength="5000"><?= e($p['description']) ?></textarea>
         </label>
@@ -110,7 +140,7 @@ if ($action === 'new' || $action === 'edit') {
         </div>
         <div class="actions">
           <button class="btn btn-primary" type="submit">Enregistrer</button>
-          <a class="btn btn-ghost" href="projets.php">Annuler</a>
+          <a class="btn btn-ghost" href="<?= $back ?>">Annuler</a>
         </div>
       </form>
     <?php
@@ -123,10 +153,12 @@ if ($action === 'new' || $action === 'edit') {
 $filtreProgramme = (int)($_GET['programme'] ?? 0);
 $filtreStatut    = in_array($_GET['statut'] ?? '', STATUTS, true) ? $_GET['statut'] : '';
 
-$sql    = 'SELECT pr.*, pg.nom AS programme FROM projets pr
-           LEFT JOIN programmes pg ON pg.id = pr.programme_id
-           WHERE pr.owner_id = ?';
-$params = [$uid];
+[$cond, $params] = projets_visibles_sql($user);
+$sql = "SELECT pr.*, pg.nom AS programme, u.prenom AS chef_prenom, u.nom AS chef_nom
+        FROM projets pr
+        LEFT JOIN programmes pg ON pg.id = pr.programme_id
+        LEFT JOIN users u ON u.id = pr.chef_projet_id
+        WHERE $cond";
 if ($filtreProgramme === -1) {
     $sql .= ' AND pr.programme_id IS NULL';
 } elseif ($filtreProgramme > 0) {
@@ -143,7 +175,15 @@ $st = db()->prepare($sql);
 $st->execute($params);
 $projets = $st->fetchAll();
 
+$totaux = totaux_affectations(array_map('intval', array_column($projets, 'id')));
+
+[$pcond, $pparams] = programmes_visibles_sql($user);
+$st = db()->prepare("SELECT p.id, p.nom FROM programmes p WHERE $pcond ORDER BY p.nom");
+$st->execute($pparams);
+$programmesFiltre = array_column($st->fetchAll(), 'nom', 'id');
+
 $today = date('Y-m-d');
+$costs = sees_costs($user);
 
 page_header('Projets', 'projets', $user);
 ?>
@@ -153,7 +193,7 @@ page_header('Projets', 'projets', $user);
             <select name="programme" onchange="this.form.submit()">
               <option value="0">Tous les programmes</option>
               <option value="-1"<?= $filtreProgramme === -1 ? ' selected' : '' ?>>Sans programme</option>
-              <?php foreach ($programmes as $pid => $pnom): ?>
+              <?php foreach ($programmesFiltre as $pid => $pnom): ?>
                 <option value="<?= (int)$pid ?>"<?= $filtreProgramme === (int)$pid ? ' selected' : '' ?>><?= e($pnom) ?></option>
               <?php endforeach; ?>
             </select>
@@ -166,7 +206,9 @@ page_header('Projets', 'projets', $user);
           </label>
           <noscript><button class="btn btn-ghost" type="submit">Filtrer</button></noscript>
         </form>
-        <a class="btn btn-primary" href="projets.php?action=new<?= $filtreProgramme > 0 ? '&amp;programme=' . $filtreProgramme : '' ?>">+ Nouveau projet</a>
+        <?php if (can_create($user)): ?>
+          <a class="btn btn-primary" href="projets.php?action=new<?= $filtreProgramme > 0 ? '&amp;programme=' . $filtreProgramme : '' ?>">+ Nouveau projet</a>
+        <?php endif; ?>
       </div>
 
       <?php if (!$projets): ?>
@@ -177,30 +219,30 @@ page_header('Projets', 'projets', $user);
         <div class="table-wrap card">
           <table>
             <thead>
-              <tr><th>Projet</th><th>Programme</th><th>Statut</th><th>Avancement</th><th>Début</th><th>Fin</th><th><span class="sr-only">Actions</span></th></tr>
+              <tr>
+                <th>Projet</th><th>Chef de projet</th><th>Statut</th><th>Avancement</th><th>Charge</th>
+                <?php if ($costs): ?><th>Coût estimé</th><?php endif; ?>
+                <th>Fin</th>
+              </tr>
             </thead>
             <tbody>
             <?php foreach ($projets as $p):
+                $t = $totaux[(int)$p['id']] ?? ['jh' => 0.0, 'cout' => 0.0, 'a_nommer' => 0];
                 $late = $p['date_fin'] && $p['date_fin'] < $today && !in_array($p['statut'], ['Terminé', 'Annulé'], true); ?>
               <tr>
                 <td>
-                  <strong><?= e($p['nom']) ?></strong>
-                  <?php if ($p['description'] !== ''): ?><div class="sub"><?= e(mb_strimwidth($p['description'], 0, 110, '…')) ?></div><?php endif; ?>
+                  <a href="projet.php?id=<?= (int)$p['id'] ?>"><strong><?= e($p['nom']) ?></strong></a>
+                  <div class="sub"><?= $p['programme'] !== null ? e($p['programme']) : 'Sans programme' ?></div>
                 </td>
-                <td><?= $p['programme'] !== null ? e($p['programme']) : '<span class="muted">—</span>' ?></td>
+                <td><?= $p['chef_nom'] !== null ? e(full_name($p, 'chef_')) : '<span class="muted">—</span>' ?></td>
                 <td><?= statut_badge($p['statut']) ?></td>
                 <td><?= progress((int)$p['avancement']) ?></td>
-                <td><?= date_fr($p['date_debut']) ?></td>
-                <td<?= $late ? ' class="late" title="Date de fin dépassée"' : '' ?>><?= date_fr($p['date_fin']) ?></td>
-                <td class="row-actions">
-                  <a href="projets.php?action=edit&amp;id=<?= (int)$p['id'] ?>">Modifier</a>
-                  <form method="post" data-confirm="Supprimer définitivement ce projet ?">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="action" value="delete">
-                    <input type="hidden" name="id" value="<?= (int)$p['id'] ?>">
-                    <button class="link danger" type="submit">Supprimer</button>
-                  </form>
+                <td>
+                  <?= jh($t['jh']) ?> J/H
+                  <?php if ($t['a_nommer']): ?><div class="sub warn"><?= $t['a_nommer'] ?> à nommer</div><?php endif; ?>
                 </td>
+                <?php if ($costs): ?><td><?= euros($t['cout']) ?></td><?php endif; ?>
+                <td<?= $late ? ' class="late" title="Date de fin dépassée"' : '' ?>><?= date_fr($p['date_fin']) ?></td>
               </tr>
             <?php endforeach; ?>
             </tbody>
